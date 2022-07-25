@@ -4,6 +4,8 @@ Author: Anirban Mukherjee
 This code is a simulation of Structured Action Prediction with ideas borrowed from the letter
 "Structured Action Prediction for Tele-Operation in Open Worlds" by Naughton et al. We use the methodology
 in this paper to demonstrate an action predictor based on an input sequence of actions.
+
+This script includes only parameter predicate methodology. \
 """
 
 ## Imports
@@ -13,10 +15,13 @@ import torch.nn as nn
 import csv
 import matplotlib.pyplot as plt
 
+"""
+The input to this network (Input_Param.csv) includes a series of actions and parameters 
+"""
+
 ## Read Input, save as a Vector
-## Read Files
-input_file = open('Input.csv')
-input_raw = csv.reader(input_file)
+input_file = open('Input_Param.csv')
+input_raw = csv.reader(input_file)  
 input_data = []
 
 for line in input_raw:
@@ -27,28 +32,29 @@ input_file.close()
 d = 7
 context_vectors = []
 
-# Creat Correct Prediction
+## Create Correct Predictions
 correct_predictions = []
 
 for i in range(d, len(input_data)):
     context_vectors.append(input_data[i-d:i])
-    prediction_array = np.zeros(10)
+    prediction_array = np.zeros(2)
     prediction_array[input_data[i]] = 1
     correct_predictions.append(prediction_array)
 
-# Initialize Neural Net Using Torch Sequential 
+print(prediction_array)
+
+## Initialize Neural Net Using Torch Sequential 
 model = nn.Sequential(
     nn.Linear(d, 10),
     nn.ReLU(),
-    nn.Linear(10,30),
+    nn.Linear(10,20),
     nn.ReLU(),
-    nn.Linear(30,15),
+    nn.Linear(20,15),
     nn.ReLU(),
-    nn.Linear(15,10),
-    nn.Softmax(dim = 1)
+    nn.Linear(15,2)
 )
 
-# Initialize Loss Function and Optimizer
+## Initialize Loss Function and Optimizer
 loss_function = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr = 0.01)
 
@@ -67,7 +73,7 @@ for epoch in range(200):
         optimizer.step()
         total_loss += loss.item()
 
-    # for plotting 
+    ## For Plotting 
     loss_scale.append(total_loss)
     epoch_scale.append(epoch)
 
@@ -76,13 +82,13 @@ print("total loss is " + str(total_loss))
 
 print("finished training")
 
-# plot loss
-plt.plot(loss_scale, epoch_scale, 'r')
+## Plot Loss
+plt.plot(epoch_scale, loss_scale, 'r')
 plt.xlabel('epochs')
 plt.ylabel('loss')
 plt.show()
 
-#Testing
+# Testing
 print("Beginning Testing")
 
 correct = 0 
