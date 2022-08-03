@@ -6,6 +6,7 @@ actions in our action vocabulary.
 """
 
 ## Imports
+from fileinput import filename
 from hashlib import new
 import numpy as np
 import torch
@@ -14,7 +15,8 @@ import csv
 import matplotlib.pyplot as plt
 import random
 from sklearn.cluster import KMeans
-
+import os
+import utilities as utils
 """
 The input file to this script (Input_Action.csv) contains a series of discrete actions each encoded to 
 a specific scalar value between 0 and 9 inclusively. The network should utilize this series of actions in order
@@ -22,7 +24,10 @@ to train on the most likely action given a brief history of previous actions.
 """
 
 ## Read Input, save as a Vector
-input_file = open('eliminator_data.csv')
+current_directory = os.path.dirname(__file__) + '/'
+data_filename = 'eliminator_data.csv'
+data_filepath = current_directory + data_filename
+input_file = open(data_filepath)
 input_raw = csv.reader(input_file)
 input_data = []
 
@@ -66,6 +71,12 @@ for i in range(d, len(input_data)):
         evaluation_data.append(new_cv)
         correct_predictions_labels.append(prediction_array)
         test_predictions_raw.append(input_data[i])
+
+# print("Context Vector: ", context_vectors)
+# print("Labelled Predictions: ", training_predictions_raw)
+
+context_vector_data_dict = utils.evaluate_input_data(context_vectors, training_predictions_raw)
+utils.save_context_vec_data(context_vector_data_dict)
 
 ## Initialize Neural Net Using Torch Sequential 
 model = nn.Sequential(
