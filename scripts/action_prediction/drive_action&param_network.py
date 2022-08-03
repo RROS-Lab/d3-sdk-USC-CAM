@@ -41,8 +41,6 @@ for i in range(d, len(input_data)):
     prediction_array[input_data[i]] = 1
     correct_predictions.append(prediction_array)
 
-print(prediction_array)
-
 ## Initialize Neural Net Using Torch Sequential 
 model = nn.Sequential(
     nn.Linear(d, 10),
