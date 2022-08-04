@@ -7,6 +7,7 @@ actions in our action vocabulary.
 
 ## Imports
 from hashlib import new
+from statistics import mean
 import numpy as np
 import torch
 import torch.nn as nn
@@ -53,7 +54,6 @@ for i in range(d, len(input_data)):
         new_cv[cv_index] += count
         count += 1
     
-
     ## Populate Predictions
     prediction_array = np.zeros(num_actions)
     prediction_array[input_data[i]] = 1
@@ -93,7 +93,7 @@ evaluation_data_outputs = []
 
 print("started training")
 
-for epoch in range(500):
+for epoch in range(100):
 
     ## Shuffle Context Vectors
     #random.shuffle(context_vectors)
@@ -102,6 +102,8 @@ for epoch in range(500):
     total_loss = 0.0
 
     for i in range(len(context_vectors)):
+
+        ## Set Gradient for Optimizer equal to Zero
         optimizer.zero_grad()
 
         ## Forward Pass
@@ -113,7 +115,7 @@ for epoch in range(500):
             numpy_log_inputs.append(eliminator_input)
             numpy_log_outputs.append(output.cpu().detach().numpy()[0])
 
-        ## Calculate Loss and Backpropagate
+        ## Calculate Loss and Backpropagate using training labels
         loss = loss_function(output, torch.FloatTensor([correct_predictions_training[i]]))
         loss.backward()
         optimizer.step()
@@ -139,26 +141,64 @@ np.savetxt("eliminator_outputs.csv", numpy_log_outputs)
 np.savetxt("training_predictions", training_predictions_raw)
 
 correct = 0 
+incorrect_eliminations = 0
+elimination_probability = 0.05
+training_number_eliminated_array = []
 data_size = len(context_vectors)
 
+## Validate Prediction and Elimination Accuracy 
 for i in range(data_size):
-
+    
+    ## Store the current context vector in a variable
     evaluation_input = context_vectors[i]
+
+    ## Forward Pass the Context Vector
     guess_raw = model(torch.Tensor([evaluation_input]))
+
+    ## Argmax the output layer
     guess = torch.argmax(guess_raw)
+
+    ## Take the argmax of the prediction labels in order to validate
     correct_prediction = np.argmax(correct_predictions_training[i])
 
+    ## Append the data for inputs and outputs
     evaluation_data_inputs.append(evaluation_input)
     evaluation_data_outputs.append(guess_raw.cpu().detach().numpy()[0])
 
     if (guess == correct_prediction):
         correct += 1
 
+
+    ## Check what actions have been eliminated
+    eliminated_actions = 0 
+    guess_raw_detached = guess_raw.cpu().detach().numpy()[0]
+
+    for i in range(len(guess_raw_detached)):
+
+        ## Find out how many actions were eliminated
+        if guess_raw_detached[i] <= elimination_probability:
+            eliminated_actions += 1
+
+            ## Find out if the correct action was eliminated 
+            if i == correct_prediction:
+                incorrect_eliminations += 1
+
+    
+    training_number_eliminated_array.append(eliminated_actions)
+
+
 accuracy = correct/data_size
+average_eliminations = mean(training_number_eliminated_array)
 
-print("accuracy after training is " + str(accuracy))
+print("prediction accuracy after training is " + str(accuracy))
 
+print("average number of actions eliminated under " + str(elimination_probability) + " is " + str(average_eliminations))
 
+print("percent of context vectors where incorrect action was eliminated is " + str(incorrect_eliminations/data_size))
+
+exit()
+
+############################################################# END ######################################################################
 ## Start Testing 
 print("Beginning Testing")
 
