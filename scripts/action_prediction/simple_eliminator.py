@@ -40,6 +40,7 @@ evaluation_data = []
 ## Create Correct Predictions
 correct_predictions_training = []
 training_predictions_raw = []
+
 correct_predictions_labels = []
 test_predictions_raw = []
 
@@ -69,19 +70,19 @@ for i in range(d, len(input_data)):
 
 ## Initialize Neural Net Using Torch Sequential 
 model = nn.Sequential(
-    nn.Linear(num_actions, 30),
+    nn.Linear(num_actions, 23),
     nn.ReLU(),
-    nn.Linear(30,60),
-    nn.ReLU(),
-    nn.Linear(60,30),
-    nn.ReLU(),
-    nn.Linear(30,num_actions),
+    # nn.Linear(23,23),
+    # nn.ReLU(),
+    # nn.Linear(23,23),
+    # nn.ReLU(),
+    nn.Linear(23,num_actions),
     nn.Softmax(dim = 1)
 )
 
 ## Initialize Loss Function and Optimizer
 loss_function = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr = 0.002)
+optimizer = torch.optim.SGD(model.parameters(), lr = 0.02)
 
 loss_scale = []
 epoch_scale = []
@@ -93,7 +94,7 @@ evaluation_data_outputs = []
 
 print("started training")
 
-for epoch in range(100):
+for epoch in range(800):
 
     ## Shuffle Context Vectors
     #random.shuffle(context_vectors)
