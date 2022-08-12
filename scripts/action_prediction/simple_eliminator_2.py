@@ -16,12 +16,6 @@ import matplotlib.pyplot as plt
 import random
 from sklearn.cluster import KMeans
 
-"""
-The input file to this script (Input_Action.csv) contains a series of discrete actions each encoded to 
-a specific scalar value between 0 and 9 inclusively. The network should utilize this series of actions in order
-to train on the most likely action given a brief history of previous actions. 
-"""
-
 ## Read Input, save as a Vector
 input_file = open('eliminator_data.csv')
 input_raw = csv.reader(input_file)
@@ -41,9 +35,6 @@ evaluation_data = []
 correct_predictions_training = []
 training_predictions_raw = []
 
-correct_predictions_labels = []
-test_predictions_raw = []
-
 for i in range(d, len(input_data)):
 
     new_cv = np.zeros(num_actions)
@@ -52,53 +43,53 @@ for i in range(d, len(input_data)):
 
     for j in range(len(d_vec)):
         cv_index = d_vec[j]
-        new_cv[cv_index] += count
+        new_cv[cv_index] += (count + 1)
         count += 1
     
     ## Populate Predictions
-
     prediction_array = np.zeros(num_actions)
     prediction_array[input_data[i]] = 1
 
-    new_cv = new_cv/(np.linalg.norm(new_cv))
+    context_vectors.append(new_cv)
+    correct_predictions_training.append(prediction_array)
+    training_predictions_raw.append(input_data[i])
 
-    if i <= 160:
-        context_vectors.append(new_cv)
-        correct_predictions_training.append(prediction_array)
-        training_predictions_raw.append(input_data[i])
-    else:
-        evaluation_data.append(new_cv)
-        correct_predictions_labels.append(prediction_array)
-        test_predictions_raw.append(input_data[i])
+for i in range(len(context_vectors)):
+    print("context vector")
+    print(context_vectors[i])
+    #print(correct_predictions_training[i])
+
 
 ## Initialize Neural Net Using Torch Sequential 
 model = nn.Sequential(
     nn.Linear(num_actions, 23),
-    # nn.ReLU(),
-    # nn.Linear(23, 23),
     nn.ReLU(),
+    # nn.Linear(23, 30),
+    # nn.ReLU(),
+    # nn.Linear(30, 40),
+    # nn.ReLU(),
+    # nn.Linear(40, 23),
+    # nn.ReLU(),
     nn.Linear(23,num_actions),
     #nn.Softmax(dim = 1)
 )
 
 ## Initialize Loss Function and Optimizer
+#loss_function = nn.CrossEntropyLoss()
 loss_function = nn.MSELoss()
-optimizer = torch.optim.SGD(model.parameters(), lr = 0.05)
+optimizer = torch.optim.SGD(model.parameters(), lr = 0.005)
 
 loss_scale = []
 epoch_scale = []
 numpy_log_inputs = []
 numpy_log_outputs = []
 
-evaluation_data_inputs = []
-evaluation_data_outputs = []
+# evaluation_data_inputs = []
+# evaluation_data_outputs = []
 
 print("started training")
 
-for epoch in range(150):
-
-    ## Shuffle Context Vectors
-    #random.shuffle(context_vectors)
+for epoch in range(200):
 
     print("Epoch #" + str(epoch))
     total_loss = 0.0
@@ -113,13 +104,21 @@ for epoch in range(150):
         output = model(torch.FloatTensor([eliminator_input]))
 
         ## Log Eliminator Input and Output to CSV
-        if epoch == 149:
-            print("logging")
+        if epoch == 199:
+            print("I'm Logging")
             numpy_log_inputs.append(eliminator_input)
             numpy_log_outputs.append(output.cpu().detach().numpy()[0])
 
         ## Calculate Loss and Backpropagate using training labels
         loss = loss_function(output, torch.FloatTensor([correct_predictions_training[i]]))
+
+        if epoch == 199:
+            print("output is")
+            print(torch.argmax(output))
+            print("label is")
+            print(np.argmax(correct_predictions_training[i]))
+
+        ## Backprop
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -144,9 +143,12 @@ np.savetxt("eliminator_outputs.csv", numpy_log_outputs)
 # Save labels for logging
 np.savetxt("training_predictions", training_predictions_raw)
 
+for i in range(len(numpy_log_outputs)):
+    print(np.argmax(numpy_log_outputs[i]))
+
 correct = 0 
 incorrect_eliminations = 0
-elimination_probability = 0.05
+elimination_probability = 0.03
 training_number_eliminated_array = []
 data_size = len(context_vectors)
 
@@ -166,8 +168,8 @@ for i in range(data_size):
     correct_prediction = np.argmax(correct_predictions_training[i])
 
     ## Append the data for inputs and outputs
-    evaluation_data_inputs.append(evaluation_input)
-    evaluation_data_outputs.append(guess_raw.cpu().detach().numpy()[0])
+    # evaluation_data_inputs.append(evaluation_input)
+    # evaluation_data_outputs.append(guess_raw.cpu().detach().numpy()[0])
 
     if (guess == correct_prediction):
         correct += 1
@@ -187,9 +189,7 @@ for i in range(data_size):
             if i == correct_prediction:
                 incorrect_eliminations += 1
 
-    
     training_number_eliminated_array.append(eliminated_actions)
-
 
 accuracy = correct/data_size
 average_eliminations = mean(training_number_eliminated_array)
@@ -199,72 +199,3 @@ print("prediction accuracy after training is " + str(accuracy))
 print("average number of actions eliminated under " + str(elimination_probability) + " is " + str(average_eliminations))
 
 print("percent of context vectors where incorrect action was eliminated is " + str(incorrect_eliminations/data_size))
-
-############################################################# END ######################################################################
-## Start Testing 
-print("Beginning Testing")
-
-correct = 0 
-data_size = len(evaluation_data)
-incorrect_eliminations = 0
-elimination_probability = 0.0000005
-training_number_eliminated_array = []
-
-for i in range(data_size):
-
-    evaluation_input = evaluation_data[i]
-    guess_raw = model(torch.Tensor([evaluation_input]))
-    guess = torch.argmax(guess_raw)
-    correct_prediction = np.argmax(correct_predictions_labels[i])
-
-    evaluation_data_inputs.append(evaluation_input)
-    evaluation_data_outputs.append(guess_raw.cpu().detach().numpy()[0])
-
-    if (guess == correct_prediction):
-        correct += 1
-
-    ## Check what actions have been eliminated
-    eliminated_actions = 0 
-    guess_raw_detached = guess_raw.cpu().detach().numpy()[0]
-
-    for i in range(len(guess_raw_detached)):
-
-        ## Find out how many actions were eliminated
-        if guess_raw_detached[i] <= elimination_probability:
-            eliminated_actions += 1
-
-            ## Find out if the correct action was eliminated 
-            if i == correct_prediction:
-                incorrect_eliminations += 1
-
-
-accuracy = correct/data_size
-
-print("-----------TESTING---------------")
-
-print("prediction accuracy after evaluation is " + str(accuracy))
-
-print("average number of actions eliminated under " + str(elimination_probability) + " is " + str(average_eliminations))
-
-print("percent of context vectors where incorrect action was eliminated is " + str(incorrect_eliminations/data_size))
-
-np.savetxt("evaluation_inputs.csv", evaluation_data_inputs)
-np.savetxt("evaluation_outputs.csv", evaluation_data_outputs)
-# Save Labels for Logging
-np.savetxt("evaluation_predictions", test_predictions_raw)
-
-exit()
-
-""" 
-We Need to Cluster our Input Data in order to gauge the similarity of context vectors
-"""
-
-def getHamming(x, y):
-    sum(x != y)
-
-kmeans = KMeans(n_clusters=40, init='k-means++', max_iter=300, n_init=10, random_state=0)
-pred_y = kmeans.fit_predict(context_vectors)
-
-print(pred_y)
-print((len(context_vectors)))
-print((len(pred_y)))
