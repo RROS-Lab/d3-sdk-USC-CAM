@@ -111,7 +111,7 @@ for i in range(d, len(input_data)):
     new_cv = new_cv/(np.linalg.norm(new_cv))
 
     # For Training 
-    if i <= 12:
+    if i <= 25:
         training_context_vectors_predictor.append(new_cv)
         training_predictions_predictor.append(prediction_array)
         raw_training_predictions_predictor.append(input_data[i])
@@ -130,14 +130,16 @@ Create both Neural Networks using Torch.Sequential
 eliminator_model = nn.Sequential(
     nn.Linear(num_actions, 23),
     nn.ReLU(),
-    nn.Linear(23,num_actions),
+    nn.Linear(23,num_actions)
 )
 
 predictor_model = nn.Sequential(
-    nn.Linear(num_actions, 23),
+    nn.Linear(2*num_actions,23),
     nn.ReLU(),
-    nn.Linear(23,num_actions),
-    #nn.Softmax(dim=0)
+    nn.Linear(23,30),
+    nn.ReLU(),
+    nn.Linear(30, num_actions),
+    #nn.Softmax(dim = 1)
 )
 
 ## Define Neural Net Loss Functions and Optimizers
@@ -146,7 +148,7 @@ optimizer_eliminator = torch.optim.SGD(eliminator_model.parameters(), lr = 0.05)
 
 #loss_function_predictor = nn.CrossEntropyLoss()
 loss_function_predictor = nn.MSELoss()
-optimizer_predictor = torch.optim.SGD(predictor_model.parameters(), lr = 0.05)
+optimizer_predictor = torch.optim.SGD(predictor_model.parameters(), lr = 0.02)
 
 ## Define Training Function (with plot)
 def make_tensor(array):
@@ -201,8 +203,22 @@ def eliminator_training(context_vectors, labels, epochs, plot=True):
 Predictor Training Function and helper
 """
 
-def bayesian_merge(input1, input2):
-    input1 
+def bayesian_merge(tensor1, tensor2):
+
+    ## Method for combining two tensors using bayesian update
+    new_array = []
+
+    vector1 = tensor1.cpu().detach().numpy()[0]
+    vector2 = tensor2.cpu().detach().numpy()[0]
+
+    for i in range(len(vector1)):
+        new_array.append(vector1[i])
+
+    for i in range(len(vector2)):
+        new_array.append(vector2[i])
+    
+    return make_tensor(new_array)
+
 
 def filter_eliminated(input, elimination_probability):
 
@@ -241,9 +257,10 @@ def predictor_training(context_vectors, labels, epochs, elimination_probability,
             ## Forward Pass through eliminator network 
             eliminator_input = context_vectors[j]
             eliminator_output = eliminator_forward(eliminator_input)
+            eliminator_output = filter_eliminated(eliminator_output, elimination_probability)
 
             ## Concatenate output of eliminator network with context vector, forward pass through predictor
-            predictor_input = torch.cat((make_tensor(eliminator_input), filter_eliminated(eliminator_output, elimination_probability)), 0)
+            predictor_input = bayesian_merge(make_tensor(eliminator_input), eliminator_output)
             predictor_output = predictor_model(predictor_input)
             
             ## Calculate Loss and Backpropagate using training labels
@@ -281,17 +298,23 @@ def evaluate_predictor(context_vectors, raw_labels, elimination_probability):
         
         ## Store the current context vector in a variable
         evaluation_input = context_vectors[i]
+        #print(evaluation_input)
 
         ## Forward Pass the Context Vector
         eliminator_output = filter_eliminated((eliminator_forward(evaluation_input)), elimination_probability)
-        cat_input = torch.cat((make_tensor(evaluation_input), eliminator_output), 0) 
-        guess_raw = predictor_model(cat_input)
+        bayesian_input = bayesian_merge(make_tensor(evaluation_input), eliminator_output)
+        #print(bayesian_input)
+        guess_raw = predictor_model(bayesian_input)
 
         ## Argmax the output layer
         guess = torch.argmax(guess_raw)
 
+        print(guess)
+
         ## Take the argmax of the prediction labels in order to validate
         correct_prediction = raw_labels[i]
+
+        #print(correct_prediction)
 
         if (guess == correct_prediction):
             correct += 1
@@ -305,9 +328,10 @@ Train
 """
 #if __name__ == "main":
 eliminator_training(training_context_vectors_eliminator, training_predictions_eliminator, 200)
-predictor_training(training_context_vectors_predictor, training_predictions_predictor, 1000, 0.05)
+predictor_training(training_context_vectors_predictor, training_predictions_predictor, 2000, 0.05)
 
 """
 Evaluate
 """
 evaluate_predictor(training_context_vectors_predictor, raw_training_predictions_predictor, 0.05)
+evaluate_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor, -40000)
