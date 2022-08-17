@@ -231,7 +231,8 @@ def filter_eliminated(input, elimination_probability):
         if raw_vector[i] <= elimination_probability:
             new_vector.append(0)
         else:
-            new_vector.append(1)
+            #new_vector.append(1)
+            new_vector.append(raw_vector[i])
 
     return torch.FloatTensor([new_vector])
     
@@ -334,4 +335,4 @@ predictor_training(training_context_vectors_predictor, training_predictions_pred
 Evaluate
 """
 evaluate_predictor(training_context_vectors_predictor, raw_training_predictions_predictor, 0.05)
-evaluate_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor, -40000)
+evaluate_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor, 0.005)
