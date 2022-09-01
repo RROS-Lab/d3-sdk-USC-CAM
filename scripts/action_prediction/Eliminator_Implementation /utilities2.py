@@ -1,3 +1,5 @@
+from calendar import c
+from curses import raw
 from hashlib import new
 from heapq import merge
 from statistics import mean
@@ -8,6 +10,7 @@ import csv
 import matplotlib.pyplot as plt
 import random
 from sklearn.cluster import KMeans
+import copy
 
 """
 This file defines the functions and classes which will be used in main.py for 
@@ -112,7 +115,7 @@ for i in range(d, len(input_data)):
     new_cv = new_cv/(np.linalg.norm(new_cv))
 
     # For Training 
-    if i <= 42:
+    if i <= 36:
         training_context_vectors_predictor.append(new_cv)
         training_predictions_predictor.append(prediction_array)
         raw_training_predictions_predictor.append(input_data[i])
@@ -136,8 +139,8 @@ eliminator_model = nn.Sequential(
 
 predictor_model = nn.Sequential(
     nn.Linear(num_actions,23),
-    nn.Linear(23,30),
-    nn.Linear(30, num_actions)
+    nn.Linear(23,23),
+    nn.Linear(23, num_actions)
 )
 
 baseline_model = nn.Sequential(
@@ -151,7 +154,7 @@ loss_function_eliminator = nn.MSELoss()
 optimizer_eliminator = torch.optim.SGD(eliminator_model.parameters(), lr = 0.05)
 
 loss_function_predictor = nn.MSELoss()
-optimizer_predictor = torch.optim.Adam(predictor_model.parameters(), lr = 0.001)
+optimizer_predictor = torch.optim.SGD(predictor_model.parameters(), lr = 0.001)
 
 loss_function_baseline = nn.MSELoss()
 optimizer_baseline = torch.optim.SGD(baseline_model.parameters(), lr = 0.005)
@@ -380,10 +383,10 @@ def evaluate_predictor(context_vectors, raw_labels, elimination_probability):
             print("delta network guessed incorrectly")
             print("guess was " + str(int(guess)))
             print("correct answer was " + str(correct_prediction))
-            print("input layer was: ")
-            print(evaluation_input)
-            print("output layer was: ")
-            print(merged_guess_raw)
+            # print("input layer was: ")
+            # print(evaluation_input)
+            # print("output layer was: ")
+            # print(merged_guess_raw)
             incorrect += 1
     
     accuracy = correct/len(context_vectors)
@@ -413,6 +416,9 @@ def evaluate_eliminator_as_predictor(context_vectors, raw_labels):
         if (guess == correct_prediction):
             correct += 1
         else:
+            print("eliminator network guessed incorrectly")
+            print("guess was " + str(int(guess)))
+            print("correct answer was " + str(correct_prediction))
             incorrect += 1
 
     accuracy = correct/len(context_vectors)
@@ -450,26 +456,195 @@ def evaluate_baseline(context_vectors, raw_labels):
     print("accuracy of baseline network is " + str(accuracy))
     print("correct: " + str(correct) + " and incorrect: " + str(incorrect))
 
-
 """
 Train
 """
 eliminator_training(training_context_vectors_eliminator, training_predictions_eliminator, 200, plot=False)
-predictor_training(training_context_vectors_predictor, training_predictions_predictor, 20000, 0.05, plot=True)
+#predictor_training(training_context_vectors_predictor, training_predictions_predictor, 600, 0.05, plot=True)
 baseline_training(training_context_vectors_predictor, training_predictions_predictor, 600, plot=False)
+
+
+####################################################################################################################
+"""
+Delta Network Stuff
+"""
+
+def createDeltaDataMethod1(training_context_vectors, training_predictions, elimination_probability):
+    data = []
+    for i in range(len(training_predictions)):
+        elim_output = eliminator_forward(training_context_vectors[i])
+        elim_output = filter_eliminated(elim_output, elimination_probability)
+        elim_output = normalize_tensor(elim_output)
+        delta_vector = torch.sub(make_tensor(training_predictions[i]), elim_output)
+        data.append(delta_vector)    
+    return data
+
+def createDeltaDataMethod2(training_context_vectors, training_predictions, training_predictions_raw, elimination_probability, margin = 0.2, bias = 0.01):
+    data = []
+    for i in range(len(training_predictions)):
+        elim_output = eliminator_forward(training_context_vectors[i])
+        elim_output = filter_eliminated(elim_output, elimination_probability)
+        elim_output = normalize_tensor(elim_output)
+        delta_vector = copy.deepcopy(elim_output)
+        correct_index = training_predictions_raw[i]
+        
+
+        ## If eliminator guesses correctly 
+        if torch.argmax(delta_vector) == correct_index:
+            for j in range(len(delta_vector[0])):
+                if (not j == correct_index) and not ((delta_vector[0][correct_index] - delta_vector[0][j]) > margin):
+                    delta_vector[0][j] = delta_vector[0][j] - ((delta_vector[0][correct_index] - delta_vector[0][j]) - margin)
+        else:
+            push_pull = (delta_vector[0][torch.argmax(delta_vector)] - delta_vector[0][correct_index] + margin)/2
+            delta_vector[0][torch.argmax(delta_vector)] = delta_vector[0][torch.argmax(delta_vector)] - push_pull
+            delta_vector[0][correct_index] = delta_vector[0][correct_index] + push_pull
+            for j in range(len(delta_vector[0])):
+                if (not (j == correct_index or j == torch.argmax(delta_vector))) and not ((delta_vector[0][correct_index] - delta_vector[0][j]) > margin):
+                    delta_vector[0][j] = delta_vector[0][j] - ((delta_vector[0][correct_index] - delta_vector[0][j]) - margin)      
+        
+        delta_vector = torch.sub(delta_vector, elim_output)
+        delta_vector = torch.add(delta_vector, bias)
+        data.append(delta_vector)    
+    return data
+
+def create_mini_batches_labels(list, batch_size):
+    mini_batched_list = []
+    for i in range(len(list)-batch_size):
+        mini_batch = []
+        for j in range(batch_size):
+            mini_batch.append(list[i+j][0].cpu().detach().numpy())
+        mini_batched_list.append(torch.FloatTensor(mini_batch))
+        i = i + batch_size 
+    return mini_batched_list
+
+def create_mini_batches_context_vectors(list, batch_size):
+    mini_batched_list = []
+    for i in range(len(list)-batch_size):
+        mini_batch = []
+        for j in range(batch_size):
+            mini_batch.append(list[i+j])
+        mini_batched_list.append(mini_batch)
+        i = i + batch_size 
+    return mini_batched_list
+
+def evaluate_delta(context_vectors, raw_labels):
+
+    correct = 0
+    incorrect = 0
+
+    for i in range(len(context_vectors)):
+        
+        ## Store the current context vector in a variable
+        evaluation_input = context_vectors[i]
+
+        ## Forward Pass the Context Vector
+        guess_raw = predictor_forward(evaluation_input)
+        guess_raw = normalize_tensor(guess_raw)
+        guess_raw_np = guess_raw.cpu().detach().numpy()[0]
+
+        label_vector = raw_labels[i].cpu().detach().numpy()[0]
+
+        ## Argmax the output layer
+        #guess = torch.argmax(guess_raw)
+
+        is_correct = True
+        index_off = False
+
+        for j in range(len(guess_raw_np)):
+            if (abs(guess_raw_np[j] - label_vector[j]) <= 0.3):
+                if not index_off:
+                    is_correct = True
+            else:
+                is_correct = False
+                index_off = True
+                print("index at incorrect value: ")
+                print(j)
+                print("off by: ")
+                print(abs(guess_raw_np[j] - label_vector[j]))
+                
+        if is_correct:
+            correct += 1
+        else: 
+            print("guess was " + str(guess_raw_np))
+            print("correct was " + str(raw_labels[i]))
+            incorrect += 1
+    
+    accuracy = correct/len(context_vectors)
+
+    print("accuracy of delta network is " + str(accuracy))
+    print("correct: " + str(correct) + " and incorrect: " + str(incorrect))
+
+    
+def delta_training(context_vectors, labels, epochs, plot=True, show_epochs=False):
+
+    # Axes for Plotting
+    loss_scale = []
+    epoch_scale = []
+
+    # Training Loop 
+    for i in range(epochs):
+
+        # Print the number of epochs and initialize loss at every epoch to zero 
+        if show_epochs:
+            print("Predictor Training Epoch #" + str(i))
+        total_loss = 0.0
+
+        # Train on each context vector
+        for j in range(len(context_vectors)):
+
+            ## Set Gradient for Optimizer equal to Zero
+            optimizer_predictor.zero_grad()
+
+            ## Forward Pass through eliminator network 
+            delta_input = context_vectors[j]
+            delta_output = predictor_forward(delta_input)
+            delta_output = normalize_tensor(delta_output)
+            
+            ## Calculate Loss and Backpropagate using training labels
+            loss = loss_function_predictor(delta_output[0], labels[j])
+            loss.backward()
+            optimizer_predictor.step()
+            total_loss += loss.item()
+
+        ## For Plotting 
+        loss_scale.append(total_loss)
+        epoch_scale.append(i)
+
+    print("finished training delta network")
+
+    if plot: 
+        ## Plot Loss
+        plt.plot(epoch_scale, loss_scale, 'r')
+        plt.xlabel('epochs')
+        plt.ylabel('loss')  
+        plt.show()
+
+
+delta_training_data = createDeltaDataMethod2(training_context_vectors_predictor, training_predictions_predictor, raw_training_predictions_predictor, 0.05)
+delta_testing_data = createDeltaDataMethod2(evaluation_context_vectors_predictor, evaluation_predictions_predictor, raw_evaluation_predictions_predictor, 0.05)
+
+delta_training_data_batches = create_mini_batches_labels(delta_training_data, 4)
+training_context_vectors_predictor_batches = create_mini_batches_context_vectors(training_context_vectors_predictor, 4)
+
+delta_training(training_context_vectors_predictor, delta_training_data, 8000, plot=True)
+print("training data")
+evaluate_delta(training_context_vectors_predictor, delta_training_data)
+print("testing data")
+evaluate_delta(evaluation_context_vectors_predictor, delta_testing_data)
+
 
 """
 Evaluate
 """
-print("delta training data")
-evaluate_predictor(training_context_vectors_predictor, raw_training_predictions_predictor, 0.05)
-print("eliminator as predictor training data")
-evaluate_eliminator_as_predictor(training_context_vectors_predictor, raw_training_predictions_predictor)
-print("baseline network training data")
-evaluate_baseline(training_context_vectors_predictor, raw_training_predictions_predictor)
-print("delta testing data")
-evaluate_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor, 0.005)
-print("eliminator as predictor testing data")
-evaluate_eliminator_as_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor)
-print("baseline network testing")
-evaluate_baseline(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor)
+# print("delta training data")
+# evaluate_predictor(training_context_vectors_predictor, raw_training_predictions_predictor, 0.05)
+# print("eliminator as predictor training data")
+# evaluate_eliminator_as_predictor(training_context_vectors_predictor, raw_training_predictions_predictor)
+# print("baseline network training data")
+# evaluate_baseline(training_context_vectors_predictor, raw_training_predictions_predictor)
+# print("delta testing data")
+# evaluate_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor, 0.05)
+# print("eliminator as predictor testing data")
+# evaluate_eliminator_as_predictor(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor)
+# print("baseline network testing")
+# evaluate_baseline(evaluation_context_vectors_predictor, raw_evaluation_predictions_predictor)
