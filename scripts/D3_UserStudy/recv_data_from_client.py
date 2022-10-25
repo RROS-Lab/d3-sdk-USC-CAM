@@ -8,7 +8,7 @@ This code is a main server and opens sidebar.html in localhost.
 import socket
 import csv
 
-HOST = "192.168.34.1"  # The server's hostname or IP address
+HOST = "192.168.34.91"  # The server's hostname or IP address
 PORT = 4000  # The port used by the server
 
 # Creating Server Socket
